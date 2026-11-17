@@ -14,7 +14,7 @@ bash scripts/device-fixtures.sh
 gradle :app:connectedDebugAndroidTest
 ```
 
-APK находится в `app/build/outputs/apk/debug/app-debug.apk`. [GitHub Actions](https://github.com/smaks190-crypto/Downloader/actions/workflows/android.yml) публикует ZIP-артефакт **Downloader-debug** после сборки. В отдельной задаче запускаются проверки на x86_64-эмуляторе Android 17. Инструментальные тесты генерируют и используют локальные видео и потоки.
+APK находится в `app/build/outputs/apk/debug/app-debug.apk`. [GitHub Actions](https://github.com/smaks190-crypto/Downloader/actions/workflows/android.yml) публикует ZIP-артефакт **Downloader-debug** после сборки. В отдельной задаче запускаются проверки на x86_64-эмуляторе Android 15. В ручном запуске workflow можно выбрать Android 17. Инструментальные тесты генерируют и используют локальные видео и потоки.
 
 ## Как работает
 

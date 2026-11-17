@@ -5,6 +5,12 @@ on:
     branches: [main]
   pull_request:
   workflow_dispatch:
+    inputs:
+      android_version:
+        description: Android version for the emulator
+        type: choice
+        default: '15'
+        options: ['15', '17']
 
 permissions:
   contents: read
@@ -87,8 +93,9 @@ jobs:
       - uses: reactivecircus/android-emulator-runner@v2
         with:
           api-level: '36'
-          system-image-api-level: '37.0'
+          system-image-api-level: ${{ inputs.android_version == '17' && '37.0' || '35' }}
           target: google_apis
+          emulator-boot-timeout: 360
           arch: x86_64
           disable-animations: true
           script: gradle --no-daemon :app:connectedDebugAndroidTest
