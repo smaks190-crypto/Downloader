@@ -10,7 +10,7 @@ import android.content.BroadcastReceiver
 import android.content.Context
 import android.content.Intent
 import android.content.pm.ServiceInfo
-import androidx.annotation.RequiresApi
+import android.os.Build
 import androidx.core.app.NotificationCompat
 import androidx.work.CoroutineWorker
 import androidx.work.ForegroundInfo
@@ -22,12 +22,12 @@ import kotlinx.coroutines.SupervisorJob
 import kotlinx.coroutines.cancel
 import kotlinx.coroutines.launch
 
-@RequiresApi(34)
 class TransferJobService : JobService() {
     private val scope = CoroutineScope(SupervisorJob() + Dispatchers.Main.immediate)
     private val jobs = mutableMapOf<Int, Job>()
 
     override fun onStartJob(params: JobParameters): Boolean {
+        if (Build.VERSION.SDK_INT < 34) return false
         val id = params.jobId
         val notifications = graph.notifications
         setNotification(params, notifications.progressId(id), notifications.progress(id, TransferProgress("В очереди")),

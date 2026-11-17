@@ -28,12 +28,29 @@ jobs:
       - uses: android-actions/setup-android@v3
         with:
           packages: 'platform-tools platforms;android-36 build-tools;35.0.0'
-      - run: gradle --no-daemon :app:testDebugUnitTest :app:lintDebug :app:assembleDebug
+      - run: gradle --no-daemon :app:testDebugUnitTest :app:assembleDebug
+      - name: Verify debug APK signature and checksum
+        run: |
+          apk=app/build/outputs/apk/debug/app-debug.apk
+          "$ANDROID_HOME/build-tools/35.0.0/apksigner" verify --verbose "$apk"
+          sha256sum "$apk"
+      - name: Count passing unit tests
+        run: |
+          python - <<'PYTHON'
+          import glob
+          from xml.etree import ElementTree
+          files = glob.glob('app/build/test-results/testDebugUnitTest/TEST-*.xml')
+          suites = [ElementTree.parse(file).getroot() for file in files]
+          count = sum(int(suite.attrib['tests']) for suite in suites)
+          print(f'{count} unit tests passed')
+          assert count > 0
+          PYTHON
       - uses: actions/upload-artifact@v4
         with:
           name: Downloader-debug
           path: app/build/outputs/apk/debug/app-debug.apk
           if-no-files-found: error
+      - run: gradle --no-daemon :app:lintDebug
       - uses: actions/upload-artifact@v4
         if: always()
         with:

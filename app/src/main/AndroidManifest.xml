@@ -35,7 +35,7 @@
         <activity android:name=".DownloadActionActivity" android:exported="false"
             android:theme="@style/ShareTheme" android:excludeFromRecents="true" />
         <receiver android:name=".DownloadActionReceiver" android:exported="false" />
-        <service android:name=".TransferJobService"
+        <service android:name=".TransferJobService" android:enabled="@bool/uidt_available"
             android:exported="true" android:permission="android.permission.BIND_JOB_SERVICE" />
         <service android:name="androidx.work.impl.foreground.SystemForegroundService"
             android:foregroundServiceType="dataSync" android:exported="false" />

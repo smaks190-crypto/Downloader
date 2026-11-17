@@ -108,6 +108,7 @@ class YtDlpExtractor(private val context: Context) : VideoExtractor {
             .addOption("--ignore-config")
             .addOption("--no-update")
             .addOption("--no-playlist")
+            .addOption("--playlist-items", "1")
             .addOption("--no-mtime")
             .addOption("--continue")
             .addOption("--no-color")
