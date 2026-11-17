@@ -108,6 +108,12 @@ abstract class DownloadHistoryRepository {
     @Query("UPDATE downloads SET status = 'cancelled', detail = NULL WHERE id = :id AND status IN ('paused','queued','running')")
     abstract suspend fun cancel(id: Int): Int
 
+    @Query("UPDATE downloads SET uri = :uri, mime = :mime WHERE id = :id AND status = 'running'")
+    abstract suspend fun stageOutput(id: Int, uri: String, mime: String): Int
+
+    @Query("UPDATE downloads SET uri = NULL, mime = NULL WHERE id = :id AND status != 'complete'")
+    abstract suspend fun clearOutput(id: Int)
+
     @Query("UPDATE downloads SET status = 'complete', uri = :uri, mime = :mime, detail = NULL WHERE id = :id AND status = 'running'")
     abstract suspend fun complete(id: Int, uri: String, mime: String): Int
 

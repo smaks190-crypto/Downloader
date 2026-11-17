@@ -18,9 +18,11 @@ import androidx.work.OneTimeWorkRequestBuilder
 import androidx.work.WorkManager
 import androidx.work.workDataOf
 import kotlinx.coroutines.CancellationException
+import kotlinx.coroutines.CoroutineStart
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.NonCancellable
 import kotlinx.coroutines.cancelAndJoin
+import kotlinx.coroutines.async
 import kotlinx.coroutines.channels.Channel
 import kotlinx.coroutines.coroutineScope
 import kotlinx.coroutines.flow.MutableStateFlow
@@ -157,7 +159,11 @@ class DownloadQueueManager(
             true
         }
         if (changed) withContext(Dispatchers.IO) {
-            lock(id).withLock { directory(id).deleteRecursively() }
+            lock(id).withLock {
+                history.get(id)?.uri?.let { storage.delete(Uri.parse(it)) }
+                history.clearOutput(id)
+                directory(id).deleteRecursively()
+            }
         }
     }
 
@@ -184,22 +190,47 @@ class DownloadQueueManager(
     suspend fun run(id: Int, updateNotification: (TransferProgress) -> Unit): Boolean =
         withContext(Dispatchers.IO) {
             lock(id).withLock {
-                if (history.get(id)?.status !in Status.active) return@withLock false
+                val queued = history.get(id) ?: return@withLock false
+                if (queued.status !in Status.active) return@withLock false
                 acquireSlot()
                 try {
+                    if (queued.wifi && !isWifi()) {
+                        return@withLock history.transitionActive(id, Status.QUEUED, Problem.WIFI.text) > 0
+                    }
                     if (history.begin(id) == 0) return@withLock false
                     val record = history.get(id) ?: return@withLock false
-                    if (record.wifi && !isWifi()) {
-                        history.transitionActive(id, Status.QUEUED, Problem.WIFI.text)
-                        return@withLock true
-                    }
-                    perform(record, updateNotification)
+                    if (record.wifi) onWifi(record, updateNotification) else perform(record, updateNotification)
                 } finally {
                     slots.update { it - 1 }
                     mutableProgress.update { it - id }
                 }
             }
         }
+
+    private suspend fun onWifi(record: DownloadRecord, updateNotification: (TransferProgress) -> Unit): Boolean =
+        coroutineScope {
+            val transfer = async(start = CoroutineStart.LAZY) { perform(record, updateNotification) }
+            val callback = object : ConnectivityManager.NetworkCallback() {
+                override fun onLost(network: android.net.Network) {
+                    if (!isWifi()) transfer.cancel(WifiLost())
+                }
+
+                override fun onCapabilitiesChanged(network: android.net.Network, capabilities: NetworkCapabilities) {
+                    if (!capabilities.hasTransport(NetworkCapabilities.TRANSPORT_WIFI)) transfer.cancel(WifiLost())
+                }
+            }
+            connectivity.registerDefaultNetworkCallback(callback)
+            try {
+                if (!isWifi()) transfer.cancel(WifiLost())
+                transfer.await()
+            } catch (_: WifiLost) {
+                history.transitionActive(record.id, Status.QUEUED, Problem.WIFI.text) > 0
+            } finally {
+                connectivity.unregisterNetworkCallback(callback)
+            }
+        }
+
+    private class WifiLost : CancellationException("Wi-Fi disconnected")
 
     private suspend fun perform(record: DownloadRecord, updateNotification: (TransferProgress) -> Unit): Boolean =
         coroutineScope {
@@ -217,6 +248,10 @@ class DownloadQueueManager(
                 for (event in metadataEvents) history.updateMetadata(id, event.title, event.thumbnail)
             }
             try {
+                if (record.uri != null) {
+                    storage.delete(Uri.parse(record.uri))
+                    history.clearOutput(id)
+                }
                 if (!directory.isDirectory && !directory.mkdirs()) throw DownloadFailure(Problem.STORAGE)
                 progressEvents.trySend(TransferProgress("Ищем видео"))
                 val downloaded = engine.download(record, directory, object : DownloadEvents {
@@ -227,7 +262,11 @@ class DownloadQueueManager(
                 metadataJob.join()
                 history.updateMetadata(id, downloaded.title, null)
                 progressEvents.trySend(TransferProgress("Сохраняем в медиатеку"))
-                val saved = storage.save(downloaded.file, downloaded.title)
+                val saved = storage.save(downloaded.file, downloaded.title) {
+                    if (history.stageOutput(id, it.uri.toString(), it.mime) == 0) {
+                        throw CancellationException("Download stopped before publication")
+                    }
+                }
                 withContext(NonCancellable) {
                     val completed = try {
                         history.complete(id, saved.uri.toString(), saved.mime) == 1

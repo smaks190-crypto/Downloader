@@ -16,7 +16,7 @@ data class PublishedMedia(val uri: Uri, val mime: String)
 class MediaStorageRepository(private val context: Context) {
     private val resolver = context.contentResolver
 
-    suspend fun save(file: File, title: String): PublishedMedia = withContext(Dispatchers.IO) {
+    suspend fun save(file: File, title: String, onInsert: suspend (PublishedMedia) -> Unit): PublishedMedia = withContext(Dispatchers.IO) {
         val extension = file.extension.lowercase()
         val mime = UrlResolver.mediaTypes[extension] ?: throw DownloadFailure(Problem.ENGINE)
         val audio = mime.startsWith("audio/")
@@ -31,7 +31,9 @@ class MediaStorageRepository(private val context: Context) {
             put(MediaStore.MediaColumns.IS_PENDING, 1)
         }) ?: throw IOException("MediaStore insert failed")
         var saved = false
+        val media = PublishedMedia(uri, mime)
         try {
+            onInsert(media)
             file.inputStream().use { input ->
                 val destination = resolver.openOutputStream(uri) ?: throw IOException("MediaStore stream not available")
                 destination.use { output ->
@@ -50,7 +52,7 @@ class MediaStorageRepository(private val context: Context) {
             }, null, null)
             if (updated != 1) throw IOException("MediaStore publish failed")
             saved = true
-            PublishedMedia(uri, mime)
+            media
         } finally {
             if (!saved) runCatching { resolver.delete(uri, null, null) }
         }

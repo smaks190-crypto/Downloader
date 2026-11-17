@@ -64,9 +64,19 @@ class DownloadDeviceTest {
                 }
                 error("missing queue entry")
             }
-            instrumentation.uiAutomation.executeShellCommand("input keyevent KEYCODE_HOME").close()
+            val beforeHome = withTimeout(25_000) {
+                var bytes = 0L
+                while (bytes == 0L) {
+                    bytes = app.graph.queue.progress.value[id]?.bytes ?: 0L
+                    if (bytes == 0L) delay(100)
+                }
+                bytes
+            }
+            android.os.ParcelFileDescriptor.AutoCloseInputStream(
+                instrumentation.uiAutomation.executeShellCommand("input keyevent KEYCODE_HOME")
+            ).use { it.readBytes() }
             withTimeout(25_000) {
-                while (app.graph.queue.progress.value[id]?.bytes?.let { it > 0 } != true) delay(100)
+                while (app.graph.queue.progress.value[id]?.bytes?.let { it > beforeHome } != true) delay(100)
             }
             val result = withTimeout(60_000) {
                 while (true) {

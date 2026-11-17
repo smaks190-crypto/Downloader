@@ -21,7 +21,6 @@ import androidx.lifecycle.Lifecycle
 import androidx.lifecycle.lifecycleScope
 import androidx.lifecycle.viewModelScope
 import kotlinx.coroutines.CancellationException
-import kotlinx.coroutines.Job
 import kotlinx.coroutines.flow.MutableSharedFlow
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.SharingStarted
@@ -32,7 +31,7 @@ import kotlinx.coroutines.flow.stateIn
 import kotlinx.coroutines.launch
 
 class ShareActivity : ComponentActivity() {
-    private var incoming: Job? = null
+    private var pendingIntents = 0
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
@@ -46,10 +45,10 @@ class ShareActivity : ComponentActivity() {
     }
 
     private fun handle(intent: Intent) {
-        incoming?.cancel()
-        incoming = lifecycleScope.launch {
-            lifecycle.currentStateFlow.first { it.isAtLeast(Lifecycle.State.RESUMED) }
+        pendingIntents++
+        lifecycleScope.launch {
             try {
+                lifecycle.currentStateFlow.first { it.isAtLeast(Lifecycle.State.RESUMED) }
                 val url = ShareIntentHandler.link(intent)
                 val options = graph.settings.state.value
                 when {
@@ -62,8 +61,9 @@ class ShareActivity : ComponentActivity() {
                 throw error
             } catch (_: Exception) {
                 toast(Problem.SCHEDULE.text)
+            } finally {
+                if (--pendingIntents == 0) finish()
             }
-            finish()
         }
     }
 }
