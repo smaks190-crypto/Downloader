@@ -1,5 +1,8 @@
 package com.inako.downloader
 
+import android.Manifest
+import android.app.Notification
+import android.app.NotificationManager
 import android.content.Context
 import android.content.Intent
 import android.content.pm.PackageManager
@@ -50,6 +53,9 @@ class DownloadDeviceTest {
     }
 
     @Test fun resolvesShareAndDownloadsAutomaticallyWhileBackgrounded() = runBlocking {
+        if (android.os.Build.VERSION.SDK_INT >= 33) {
+            instrumentation.uiAutomation.grantRuntimePermission(app.packageName, Manifest.permission.POST_NOTIFICATIONS)
+        }
         fixtureServer(slow = true).use { server ->
             val intent = Intent(Intent.ACTION_SEND).setType("text/plain")
                 .putExtra(Intent.EXTRA_TEXT, "Вот видео ${server.url("/direct.mp4")}")
@@ -71,6 +77,14 @@ class DownloadDeviceTest {
                     if (bytes == 0L) delay(100)
                 }
                 bytes
+            }
+            val notificationManager = app.getSystemService(NotificationManager::class.java)
+            withTimeout(4000) {
+                while (notificationManager.activeNotifications.none {
+                        it.id == app.graph.notifications.progressId(id) &&
+                        it.notification.extras.getInt(Notification.EXTRA_PROGRESS) in 1..99 &&
+                        it.notification.extras.getInt(Notification.EXTRA_PROGRESS_MAX) == 100
+                    }) delay(75)
             }
             android.os.ParcelFileDescriptor.AutoCloseInputStream(
                 instrumentation.uiAutomation.executeShellCommand("input keyevent KEYCODE_HOME")
@@ -142,7 +156,7 @@ class DownloadDeviceTest {
                 val response = MockResponse().setHeader("Content-Type", type)
                 if (request.method == "HEAD") return response.setHeader("Content-Length", bytes.size)
                 response.setBody(Buffer().write(bytes))
-                if (slow) response.throttleBody(4096, 100, TimeUnit.MILLISECONDS)
+                if (slow) response.throttleBody(4096, 180, TimeUnit.MILLISECONDS)
                 return response
             }
         }
