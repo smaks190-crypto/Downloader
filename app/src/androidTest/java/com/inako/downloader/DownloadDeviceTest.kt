@@ -95,12 +95,16 @@ class DownloadDeviceTest {
                     val url = server.url(route)
                     val record = DownloadRecord(id = 9000 + index, url = url.toString(), title = "Fixture",
                         height = 0, audio = false, format = "mp4", wifi = false)
+                    val progressSeen = java.util.concurrent.atomic.AtomicBoolean()
                     val result = withTimeout(75_000) {
                         app.graph.engine.download(record, directory, object : DownloadEvents {
                             override fun metadata(metadata: VideoMetadata) = Unit
-                            override fun progress(progress: TransferProgress) = Unit
+                            override fun progress(progress: TransferProgress) {
+                                if (progress.bytes > 0) progressSeen.set(true)
+                            }
                         })
                     }
+                    assertTrue("Missing engine progress for $route", progressSeen.get())
                     val types = tracks(app, Uri.fromFile(result.file))
                     assertTrue("$route: $types", types.any { it.startsWith("video/") })
                     assertTrue("$route: $types", types.any { it.startsWith("audio/") })

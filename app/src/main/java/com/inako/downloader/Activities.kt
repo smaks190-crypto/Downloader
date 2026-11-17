@@ -97,7 +97,14 @@ class MainActivity : ComponentActivity() {
         super.onCreate(savedInstanceState)
         enableEdgeToEdge()
         importDraft(intent)
-        lifecycleScope.launch { viewModel.messages.collect(::toast) }
+        if (savedInstanceState == null && Build.VERSION.SDK_INT >= 33) {
+            val onboarding = getPreferences(MODE_PRIVATE)
+            if (!onboarding.getBoolean("offered_notifications", false)) {
+                onboarding.edit().putBoolean("offered_notifications", true).apply()
+                requestNotifications()
+            }
+        }
+        lifecycleScope.launch { viewModel.messages.collect { toast(it) } }
         setContent {
             DownloaderScreen(viewModel, open = { openFile(it, false) }, share = { openFile(it, true) },
                 requestNotifications = ::requestNotifications)

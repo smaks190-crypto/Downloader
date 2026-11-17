@@ -46,7 +46,10 @@ class AndroidDownloadEngine(
         val extension = UrlResolver.extension(url)
         val directEligible = !record.audio && record.height == 0
         // A direct media URL exposes one quality. Use the source file without re-encoding.
-        if (directEligible && UrlResolver.isDirect(url) && UrlResolver.mediaTypes[extension]?.startsWith("video/") == true) {
+        val matchingContainer = record.format == "source" || extension == record.format
+        if (directEligible && matchingContainer && UrlResolver.isDirect(url) &&
+            UrlResolver.mediaTypes[extension]?.startsWith("video/") == true
+        ) {
             try {
                 return direct.download(url, directory, events)
             } catch (error: DownloadFailure) {
@@ -100,6 +103,7 @@ class YtDlpExtractor(private val context: Context) : VideoExtractor {
         }
         var title = record.title
         var lastProgress = 0L
+        var lastFormat: String? = null
         val request = YoutubeDLRequest(url.toString())
             .addOption("--ignore-config")
             .addOption("--no-update")
@@ -107,6 +111,7 @@ class YtDlpExtractor(private val context: Context) : VideoExtractor {
             .addOption("--no-mtime")
             .addOption("--continue")
             .addOption("--no-color")
+            .addOption("--no-quiet")
             .addOption("--no-simulate")
             .addOption("--newline")
             .addOption("--progress")
@@ -116,9 +121,9 @@ class YtDlpExtractor(private val context: Context) : VideoExtractor {
             .addOption("--fragment-retries", "2")
             .addOption("--abort-on-unavailable-fragments")
             .addOption("--downloader", "m3u8,dash:native")
-            .addOption("--print", "before_dl:INFO %(title,thumbnail)j")
+            .addOption("--print", "before_dl:INFO %(.{title,thumbnail})j")
             .addOption("--print", "after_move:FILE %(filepath)j")
-            .addOption("--progress-template", "download:TRANSFER %(progress.downloaded_bytes,progress.total_bytes,progress.total_bytes_estimate,progress.speed,info.format_id)j")
+            .addOption("--progress-template", "download:TRANSFER %(progress.{downloaded_bytes,total_bytes,speed,status})j\t%(info.format_id)j")
             .addOption("--output", File(directory, "media.%(ext)s").absolutePath)
         if (record.audio) {
             request.addOption("--format", "ba/b")
@@ -146,16 +151,20 @@ class YtDlpExtractor(private val context: Context) : VideoExtractor {
                         events.metadata(VideoMetadata(foundTitle, image))
                     }
                     line.startsWith("TRANSFER ") -> {
+                        val sample = line.substringAfter(' ')
+                        val data = readJson(sample.substringBeforeLast('\t'))
+                        val id = sample.substringAfterLast('\t', "").let { raw ->
+                            runCatching { JSONArray("[$raw]").optString(0).take(40) }.getOrNull()
+                        }?.takeUnless { it.isBlank() || it == "NA" }
                         val time = SystemClock.elapsedRealtime()
-                        if (time - lastProgress >= 450) {
+                        if (data != null && (time - lastProgress >= 450 || id != lastFormat || data.value("status") == "finished")) {
                             lastProgress = time
-                            val data = readJson(line.substringAfter(' '))
-                            val id = data?.value("info.format_id")?.toString()?.take(40)
+                            lastFormat = id
                             events.progress(TransferProgress(
-                                if (id.isNullOrBlank()) "Загрузка" else "Поток $id",
-                                data?.long("progress.downloaded_bytes") ?: 0,
-                                data?.long("progress.total_bytes"),
-                                data?.long("progress.speed")
+                                if (id == null) "Загрузка" else "Поток $id",
+                                data.long("downloaded_bytes") ?: 0,
+                                data.long("total_bytes"),
+                                data.long("speed")
                             ))
                         }
                     }
